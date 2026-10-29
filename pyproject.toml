@@ -4,4 +4,9 @@ version = "0.1.0"
 description = "An Retrieval Augmented Generation services"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.162.0",
+    "langchain-community>=0.4.2",
+    "pypdf>=6.21.4",
+    "python-multipart>=0.0.32",
+]
