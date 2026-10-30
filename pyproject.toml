@@ -9,10 +9,12 @@ dependencies = [
     "fastapi>=0.162.0",
     "fastembed>=0.9.1",
     "langchain-community>=0.4.2",
+    "openai>=3.41.0",
     "pypdf>=6.21.4",
     "python-dotenv>=1.2.4",
     "python-multipart>=0.0.32",
     "qdrant-client>=1.20.0",
+    "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.1.6",
     "uvicorn>=0.54.0",
 ]
