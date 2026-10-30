@@ -46,10 +46,10 @@ async def save_booking(session_id: str, args: dict[str, Any]):
     async with AsyncSessionLocal() as session:
         booking = InterviewBooking(
             session_id=session_id,
-            name=args["name"],
-            email=args["email"],
-            interview_date=args["date"],
-            interview_time=args["time"],
+            name=args.get("name"),
+            email=args.get("email"),
+            interview_date=args.get("date"),
+            interview_time=args.get("time"),
             status="confirmed",
         )
 

@@ -1,5 +1,8 @@
 from openai.types.chat import ChatCompletionMessageParam
-from .llm import call_model
+from .llm import call_model, call_model_structured
+
+from pydantic import BaseModel
+from typing import Literal
 
 
 async def condense_query(
@@ -28,3 +31,30 @@ async def condense_query(
 
     content = response.choices[0].message.content
     return latest_question if not content else content.strip()
+
+
+class IntentDecision(BaseModel):
+    intent: Literal["BOOKING", "QA"]
+    reason: str
+
+
+async def detect_intent(user_msg: str) -> IntentDecision:
+    messages: list[ChatCompletionMessageParam] = [
+        {
+            "role": "system",
+            "content": (
+                "You are an intent classifier. Determine if the user wants to schedule/book "
+                "an interview/meeting or provide booking details (BOOKING), or if they are asking "
+                "questions about documents/content (QA)."
+            ),
+        },
+        {"role": "user", "content": user_msg},
+    ]
+
+    decision = await call_model_structured(
+        messages=messages,
+        response_format=IntentDecision,
+        temperature=0.0,
+    )
+
+    return decision

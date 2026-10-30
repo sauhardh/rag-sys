@@ -7,24 +7,27 @@ import json
 
 from app.core.booking import BOOKING_TOOL_DEFINITION, save_booking
 from app.core.embeddings import generate_query_embedding
-from app.core.query import condense_query
+from app.core.query import IntentDecision, condense_query, detect_intent
 from app.core.redis_mem import add_chat_turn, get_chat_history
 from .document import collection
-from app.core.llm import call_model, openai
+from app.core.llm import call_model
 
 router = APIRouter()
 
 
 SYSTEM_PROMPT = """You are a helpful assistant for document Q&A and interview scheduling.
-1. When answering questions from documents, only use the provided context. If unsure, state that the documents do not have the answer.
-2. You can schedule interviews using the 'book_interview' function. To book, you MUST collect:
-   - Full Name
-   - Email
-   - Date
-   - Time
-If any of these 4 details are missing, politely ask the user for them. Only call the function once ALL 4 details are gathered.
+When answering questions from documents, only use the provided context. If unsure, state that the documents do not have the answer.
 """
 
+BOOKING_SYSTEM_PROMPT = """You are an interview scheduling assistant.
+To book an interview, you MUST collect compulsorily:
+1. Full Name
+2. Email
+3. Date (YYYY-MM-DD)
+4. Time (HH:MM)
+If any of these details are missing from the conversation, politely ask the user to provide them.
+Only call the 'book_interview' function once ALL 4 details are provided.
+"""
 
 BOOKING_KEYWORDS = {
     "interview",
@@ -64,67 +67,91 @@ async def chat(payload: ChatRequest):
         session_id, 10
     )
 
-    # 2. Check the intent
-    messages: list[ChatCompletionMessageParam] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-    ]
-    messages.extend(history_msg)
-    messages.append({"role": "user", "content": user_msg})
+    # Find the intent
+    intent: IntentDecision = await detect_intent(user_msg)
 
-    first_call = await call_model(
-        messages=messages,
-        tools=[BOOKING_TOOL_DEFINITION],
-        tool_choice="auto",
-    )
+    ## Interview Booking
 
-    first_choice = first_call.choices[0].message
+    if intent.intent == "BOOKING":
+        booking_messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": BOOKING_SYSTEM_PROMPT},
+        ]
+        booking_messages.extend(history_msg)
+        booking_messages.append({"role": "user", "content": user_msg})
 
-    # CASE A: Model invoked booking tool
-    if first_choice.tool_calls:
-        tool_call = first_choice.tool_calls[0]
+        response = await call_model(
+            messages=booking_messages,
+            tools=[BOOKING_TOOL_DEFINITION],
+            tool_choice="auto",
+        )
+        choice = response.choices[0].message
 
-        if isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
-            if tool_call.function.name == "book_interview":
-                args = json.loads(tool_call.function.arguments)
-                booking = await save_booking(session_id, args)
+        # CASE A: Model called booking tool
+        if choice.tool_calls:
+            tool_call = choice.tool_calls[0]
 
-                reply = f"Your interview has been booked for {booking.name} on {booking.interview_date} at {booking.interview_time}. Confirmation sent to {booking.email}."
+            if isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
+                if tool_call.function.name == "book_interview":
+                    args = json.loads(tool_call.function.arguments)
+                    missing = [
+                        f for f in ["name", "email", "date", "time"] if not args.get(f)
+                    ]
 
-                await add_chat_turn(session_id, user_msg, reply)
-                return ChatResponse(
-                    session_id=session_id, response=reply, booking_created=True
-                )
+                    if missing:
+                        reply = f"Could you please also provide your {', '.join(missing)} to complete the booking?"
 
-    # Case B: User is in the interview booking flow (model asking for missing slots)
-    is_booking_intent = any(kw in user_msg.lower() for kw in BOOKING_KEYWORDS)
-    if is_booking_intent and first_choice.content:
-        reply = first_choice.content
+                        await add_chat_turn(session_id, user_msg, reply)
+                        return ChatResponse(
+                            session_id=session_id, response=reply, booking_created=False
+                        )
+
+                    # Persist booking to PostgreSQL
+                    booking = await save_booking(session_id, args)
+                    reply = (
+                        f"Your interview has been booked for {booking.name} on "
+                        f"{booking.interview_date} at {booking.interview_time}. "
+                        f"Confirmation sent to {booking.email}."
+                    )
+                    await add_chat_turn(session_id, user_msg, reply)
+                    return ChatResponse(
+                        session_id=session_id, response=reply, booking_created=True
+                    )
+
+        # CASE B: Model called for more information about booking
+        reply = (
+            choice.content
+            or "Could you please share your name, email, date, and preferred time for the interview?"
+        )
         await add_chat_turn(session_id, user_msg, reply)
         return ChatResponse(
             session_id=session_id, response=reply, booking_created=False
         )
 
-    # Case C: Model replied directly
+    ## QA
     standalone_query: str = await condense_query(history_msg, user_msg)
-
     vector_query = generate_query_embedding(standalone_query)
-    (sources, context) = collection.query_formatted(vector_query)
+    sources, context = collection.query_formatted(vector_query)
 
+    rag_system_prompt = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"Relevant Context from Documents:\n{context if context else 'No document context available.'}"
+    )
     rag_messages: list[ChatCompletionMessageParam] = [
-        {
-            "role": "system",
-            "content": f"{SYSTEM_PROMPT}\n\nRelevant Context from Documents:\n{context}",
-        }
+        {"role": "system", "content": rag_system_prompt},
     ]
     rag_messages.extend(history_msg)
     rag_messages.append({"role": "user", "content": user_msg})
+
     rag_call = await call_model(messages=rag_messages, temperature=0.2)
-    final_reply = rag_call.choices[0].message.content or "No response generated."
+    final_reply = (
+        rag_call.choices[0].message.content
+        or "I could not find an answer in the provided documents."
+    )
 
     await add_chat_turn(session_id, user_msg, final_reply)
     return ChatResponse(
         session_id=session_id,
         response=final_reply,
-        sources=list(sources),
+        sources=list(sources) if context else [],
         booking_created=False,
     )

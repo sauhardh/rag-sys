@@ -47,12 +47,6 @@ async def document(
     if not filename.lower().endswith((".txt", ".pdf")):
         raise HTTPException(status_code=400, detail="Only .txt or .pdf is supported")
 
-    if chunking_strategy not in {"fixed", "recursive"}:
-        raise HTTPException(
-            status_code=422,
-            detail="chunking_strategy must be 'fixed' or 'recursive'",
-        )
-
     document_id = uuid4()
     document_dir = UPLOAD_DIR / str(document_id)
     document_dir.mkdir(parents=True, exist_ok=True)
