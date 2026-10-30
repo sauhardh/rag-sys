@@ -1,26 +1,20 @@
 from fastapi import APIRouter, UploadFile, File, status
 from fastapi.exceptions import HTTPException
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 from pydantic import BaseModel
+from typing import Tuple
 
 from app.core import load_documents, chunk_documents, generate_embedding
 from app.core.qdrant import Collection
+from app.core.chunk import ChunkingStrategy
 from app.db.models import DocumentRecord
 from app.db import AsyncSessionLocal
-from app.core.chunk import ChunkingStrategy
 
 router = APIRouter()
 collection = Collection()
 UPLOAD_DIR = Path("./dump")
 CHUNK_SIZE = 2048
-
-
-"""
-Handles ingestion. 
-
-Usually, uploading, and ingestion part should be handled on different api endpoints.
-"""
 
 
 class DocumentPayload(BaseModel):
@@ -44,7 +38,7 @@ async def document(
     file: UploadFile = File(...),
     chunking_strategy: ChunkingStrategy = "recursive",
 ):
-    # Check and download the file
+    # Verify and download the file
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
@@ -66,14 +60,14 @@ async def document(
     file_path = document_dir / filename
 
     try:
-        # dump file
-        # TODO: Reuse saved file on failure. Further enhancement
+        # Dump file
+        # TODO: Reuse saved file on failure. as Further enhancement
         with open(file_path, "wb") as f:
             while chunk := await file.read(CHUNK_SIZE):
                 f.write(chunk)
 
-        # Update the DB
-        # as processing
+        # Update metadata to the DB
+        # status = processing
         async with AsyncSessionLocal() as session:
             record = DocumentRecord(
                 id=document_id,
@@ -83,40 +77,24 @@ async def document(
                 chunking_strategy=chunking_strategy,
                 status="processing",
             )
+            session.add(record)
             await session.commit()
 
-        # Load the file
-        docs = load_documents(file_path)
+        # RAG pipeline
+        (chunk_texts_len, top_embedding) = rag_pipeline(
+            file_path, chunking_strategy, document_id, filename
+        )
 
-        # chunking
-        chunks = chunk_documents(docs, strategy=chunking_strategy)
-
-        chunk_texts = [
-            chunk.page_content if hasattr(chunk, "page_content") else str(chunk)
-            for chunk in chunks
-        ]
-
-        if not chunk_texts:
-            raise HTTPException(
-                status_code=422,
-                detail="No text could be extracted from the document",
-            )
-
-        # embeddings
-        embeddings = generate_embedding(chunk_texts)
-
-        # store on qdrant
-        collection.add_vectors(str(document_id), chunk_texts, embeddings, filename)
-
-        # Update back on DB
-        # Processed
+        # Update back onto DB
+        # status = Processed
         async with AsyncSessionLocal() as session:
-            record = await session.get(DocumentRecord, document_id)
+            record = await session.get(DocumentRecord, ident=document_id)
 
+            print("record", record)
             if record is None:
                 raise RuntimeError("Document metadata record was not found")
 
-            record.chunk_count = len(chunk_texts)
+            record.chunk_count = chunk_texts_len
             record.status = "indexed"
 
             await session.commit()
@@ -127,10 +105,42 @@ async def document(
                 "document_id": str(document_id),
                 "filename": filename,
                 "chunking_strategy": chunking_strategy,
-                "chunk_count": len(chunk_texts),
-                "embedding_dimension": len(embeddings[0]),
+                "chunk_count": chunk_texts_len,
+                "embedding_dimension": len(top_embedding),
                 "status": "indexed",
             },
         }
     finally:
         await file.close()
+
+
+def rag_pipeline(
+    file_path: Path,
+    chunking_strategy: ChunkingStrategy,
+    document_id: UUID,
+    filename: str,
+) -> Tuple[int, list[float]]:
+    # Load the file
+    docs = load_documents(file_path)
+
+    # 1. Chunking
+    chunks = chunk_documents(docs, strategy=chunking_strategy)
+
+    chunk_texts = [
+        chunk.page_content if hasattr(chunk, "page_content") else str(chunk)
+        for chunk in chunks
+    ]
+
+    if not chunk_texts:
+        raise HTTPException(
+            status_code=422,
+            detail="No text could be extracted from the document",
+        )
+
+    # 2. Vector Embeddings
+    embeddings = generate_embedding(chunk_texts)
+
+    # 3. Store on qdrant
+    collection.add_vectors(str(document_id), chunk_texts, embeddings, filename)
+
+    return (len(chunk_texts), embeddings[0])

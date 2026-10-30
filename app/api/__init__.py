@@ -1,8 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 from app.db import close_db, init_db
-from document import router as document_router
-from chat import router as chat_router
+from .document import router as document_router
+from .chat import router as chat_router
 
 
 @asynccontextmanager
