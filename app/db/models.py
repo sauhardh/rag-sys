@@ -28,7 +28,7 @@ class DocumentRecord(Base):
 
 
 class InterviewBooking(Base):
-    __tablename__ = "Interview_Bookings"
+    __tablename__ = "interview_bookings"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
 

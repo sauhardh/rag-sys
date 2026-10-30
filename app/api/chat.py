@@ -1,21 +1,18 @@
 from fastapi import APIRouter, status
 from fastapi.exceptions import HTTPException
-from google.protobuf import message
 from pydantic import BaseModel
-from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat import ChatCompletionMessageFunctionToolCall
-import os
 import json
 
 from app.core.booking import BOOKING_TOOL_DEFINITION, save_booking
+from app.core.embeddings import generate_query_embedding
+from app.core.query import condense_query
 from app.core.redis_mem import add_chat_turn, get_chat_history
+from .document import collection
+from app.core.llm import openai
 
 router = APIRouter()
-openai = AsyncOpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_BASE_URL", "http://localhost:11434/api"),
-)
 
 
 SYSTEM_PROMPT = """You are a helpful assistant for document Q&A and interview scheduling.
@@ -88,5 +85,9 @@ async def chat(payload: ChatRequest):
                 )
 
     # Case B: Model replied directly
+    standalone_query: str = await condense_query(history_msg, user_msg)
+
+    vector_query = generate_query_embedding(standalone_query)
+    context_text = collection.query(vector_query)
 
     return {"": ""}
