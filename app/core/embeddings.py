@@ -9,3 +9,10 @@ def generate_embedding(texts: list[str]) -> list[list[float]]:
         return []
 
     return [vector.tolist() for vector in model.embed(texts)]
+
+
+def generate_query_embedding(query: str):
+    if not query.strip():
+        raise ValueError("Query must not be empty")
+
+    return generate_embedding([query])[0]

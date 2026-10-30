@@ -1,4 +1,8 @@
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from typing import List
+from qdrant_client.models import (
+    ScoredPoint,
+    Filter,
+)
 from qdrant_client import QdrantClient, models
 from uuid import UUID, uuid5
 
@@ -60,3 +64,20 @@ class Collection:
         self.client.upsert(
             collection_name=self.collection_name, points=points, wait=True
         )
+
+    def query(
+        self,
+        vector_query: list[float],
+        with_payload: bool = False,
+        limit: int = 5,
+        filter: Filter | None = None,
+    ) -> List[ScoredPoint]:
+        search_result = self.client.query_points(
+            collection_name=self.collection_name,
+            query=vector_query,
+            with_payload=with_payload,
+            query_filter=filter,
+            limit=limit,
+        ).points
+
+        return search_result
