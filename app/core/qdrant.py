@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 from qdrant_client.models import (
     ScoredPoint,
     Filter,
@@ -81,3 +81,29 @@ class Collection:
         ).points
 
         return search_result
+
+    def query_formatted(
+        self, vector_query: list[float], with_payload: bool = True, limit: int = 5
+    ) -> Tuple[set, str]:
+        scored_points = self.query(
+            vector_query,
+            with_payload,
+            limit,
+        )
+
+        context_chunks = []
+        sources = set()
+
+        for point in scored_points:
+            if point.payload:
+                text = point.payload.get("text")
+                filename = point.payload.get("filename")
+
+                if text:
+                    context_chunks.append(text)
+                if filename:
+                    sources.add(filename)
+
+        context_str = "\n\n---\n\n".join(context_chunks)
+
+        return (sources, context_str)

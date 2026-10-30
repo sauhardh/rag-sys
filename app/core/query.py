@@ -1,5 +1,5 @@
 from openai.types.chat import ChatCompletionMessageParam
-from .llm import openai
+from .llm import call_model
 
 
 async def condense_query(
@@ -22,11 +22,9 @@ async def condense_query(
     Standalone Query:
     """
 
-    response = await openai.chat.completions.create(
-        model="llama3.2:1b",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,
-    )
+    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": prompt}]
+
+    response = await call_model(messages=messages, temperature=0.0)
 
     content = response.choices[0].message.content
     return latest_question if not content else content.strip()

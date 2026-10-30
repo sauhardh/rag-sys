@@ -10,7 +10,7 @@ from app.core.embeddings import generate_query_embedding
 from app.core.query import condense_query
 from app.core.redis_mem import add_chat_turn, get_chat_history
 from .document import collection
-from app.core.llm import openai
+from app.core.llm import call_model, openai
 
 router = APIRouter()
 
@@ -24,6 +24,17 @@ SYSTEM_PROMPT = """You are a helpful assistant for document Q&A and interview sc
    - Time
 If any of these 4 details are missing, politely ask the user for them. Only call the function once ALL 4 details are gathered.
 """
+
+
+BOOKING_KEYWORDS = {
+    "interview",
+    "book",
+    "schedule",
+    "slot",
+    "appointment",
+    "date",
+    "time",
+}
 
 
 class ChatRequest(BaseModel):
@@ -60,12 +71,12 @@ async def chat(payload: ChatRequest):
     messages.extend(history_msg)
     messages.append({"role": "user", "content": user_msg})
 
-    first_call = await openai.chat.completions.create(
-        model="llama3.2:1b",
+    first_call = await call_model(
         messages=messages,
         tools=[BOOKING_TOOL_DEFINITION],
         tool_choice="auto",
     )
+
     first_choice = first_call.choices[0].message
 
     # CASE A: Model invoked booking tool
@@ -84,10 +95,36 @@ async def chat(payload: ChatRequest):
                     session_id=session_id, response=reply, booking_created=True
                 )
 
-    # Case B: Model replied directly
+    # Case B: User is in the interview booking flow (model asking for missing slots)
+    is_booking_intent = any(kw in user_msg.lower() for kw in BOOKING_KEYWORDS)
+    if is_booking_intent and first_choice.content:
+        reply = first_choice.content
+        await add_chat_turn(session_id, user_msg, reply)
+        return ChatResponse(
+            session_id=session_id, response=reply, booking_created=False
+        )
+
+    # Case C: Model replied directly
     standalone_query: str = await condense_query(history_msg, user_msg)
 
     vector_query = generate_query_embedding(standalone_query)
-    context_text = collection.query(vector_query)
+    (sources, context) = collection.query_formatted(vector_query)
 
-    return {"": ""}
+    rag_messages: list[ChatCompletionMessageParam] = [
+        {
+            "role": "system",
+            "content": f"{SYSTEM_PROMPT}\n\nRelevant Context from Documents:\n{context}",
+        }
+    ]
+    rag_messages.extend(history_msg)
+    rag_messages.append({"role": "user", "content": user_msg})
+    rag_call = await call_model(messages=rag_messages, temperature=0.2)
+    final_reply = rag_call.choices[0].message.content or "No response generated."
+
+    await add_chat_turn(session_id, user_msg, final_reply)
+    return ChatResponse(
+        session_id=session_id,
+        response=final_reply,
+        sources=list(sources),
+        booking_created=False,
+    )
