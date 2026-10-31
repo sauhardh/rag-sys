@@ -1,21 +1,21 @@
 from openai import AsyncOpenAI
-import os
 from typing import TypeVar, Type
 from pydantic import BaseModel
-
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
+
+from app.core.config import settings
 
 T = TypeVar("T", bound=BaseModel)
 
-openai = AsyncOpenAI(
-    api_key=os.getenv("OPENAI_API_KEY", "ollama"),
-    base_url=os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1"),
+openai_client = AsyncOpenAI(
+    api_key=settings.openai_api_key,
+    base_url=settings.openai_base_url,
 )
 
 
 async def call_model(
     messages: list[ChatCompletionMessageParam],
-    model: str = "mistral:latest",
+    model: str = settings.llm_model,
     temperature: float = 0.0,
     tools: list[ChatCompletionToolParam] | None = None,
     tool_choice: str | None = None,
@@ -31,14 +31,14 @@ async def call_model(
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
 
-    res = await openai.chat.completions.create(**kwargs)
+    res = await openai_client.chat.completions.create(**kwargs)
     return res
 
 
 async def call_model_structured(
     messages: list[ChatCompletionMessageParam],
     response_format: Type[T],
-    model: str = "mistral:latest",
+    model: str = settings.llm_model,
     temperature: float = 0.0,
     tools: list[ChatCompletionToolParam] | None = None,
     tool_choice: str | None = None,
@@ -55,7 +55,7 @@ async def call_model_structured(
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
 
-    res = await openai.chat.completions.parse(**kwargs)
+    res = await openai_client.chat.completions.parse(**kwargs)
 
     parsed = res.choices[0].message.parsed
     if parsed is None:

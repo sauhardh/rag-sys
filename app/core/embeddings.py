@@ -11,7 +11,7 @@ def generate_embedding(texts: list[str]) -> list[list[float]]:
     return [vector.tolist() for vector in model.embed(texts)]
 
 
-def generate_query_embedding(query: str):
+def generate_query_embedding(query: str) -> list[float]:
     if not query.strip():
         raise ValueError("Query must not be empty")
 

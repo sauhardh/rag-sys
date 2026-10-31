@@ -14,7 +14,7 @@ def chunk_documents(
     strategy: ChunkingStrategy = "recursive",
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
-):
+) -> list[Document]:
     if chunk_size <= 0:
         raise ValueError("Chunk_size must be greater than zero")
 

@@ -5,17 +5,20 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel
 from typing import Tuple
 import asyncio
+import logging
 
 from app.core import load_documents, chunk_documents, generate_embedding
 from app.core.qdrant import Collection
 from app.core.chunk import ChunkingStrategy
 from app.db.models import DocumentRecord
 from app.db import AsyncSessionLocal
+from app.core.config import settings
 
 router = APIRouter()
 collection = Collection()
-UPLOAD_DIR = Path("./dump")
-CHUNK_SIZE = 2048
+UPLOAD_DIR = settings.upload_dir
+CHUNK_SIZE = settings.upload_chunk_size
+logger = logging.getLogger(__name__)
 
 
 class DocumentPayload(BaseModel):
@@ -35,7 +38,7 @@ class DocumentResponse(BaseModel):
 @router.post(
     "/document", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED
 )
-async def document(
+async def upload_document(
     file: UploadFile = File(...),
     chunking_strategy: ChunkingStrategy = "recursive",
 ):
@@ -81,14 +84,20 @@ async def document(
                 rag_pipeline, file_path, chunking_strategy, document_id, filename
             )
         except ValueError as e:
+            await _mark_failed(document_id)
             raise HTTPException(status_code=422, detail=str(e))
+        except Exception:
+            await _mark_failed(document_id)
+            logger.exception("RAG pipeline failed for document %s", document_id)
+            raise HTTPException(
+                status_code=500, detail="Pipeline failed during processing"
+            )
 
         # Update back onto DB
         # status = Processed
         async with AsyncSessionLocal() as session:
             record = await session.get(DocumentRecord, ident=document_id)
 
-            print("record", record)
             if record is None:
                 raise RuntimeError("Document metadata record was not found")
 
@@ -123,12 +132,7 @@ def rag_pipeline(
 
     # 1. Chunking
     chunks = chunk_documents(docs, strategy=chunking_strategy)
-
-    chunk_texts = [
-        chunk.page_content if hasattr(chunk, "page_content") else str(chunk)
-        for chunk in chunks
-    ]
-
+    chunk_texts = [chunk.page_content for chunk in chunks]
     if not chunk_texts:
         raise ValueError("No text could be extracted from the document")
 
@@ -139,3 +143,14 @@ def rag_pipeline(
     collection.add_vectors(str(document_id), chunk_texts, embeddings, filename)
 
     return (len(chunk_texts), embeddings[0])
+
+
+async def _mark_failed(document_id: UUID):
+    try:
+        async with AsyncSessionLocal() as session:
+            record = await session.get(DocumentRecord, document_id)
+            if record:
+                record.status = "failed"
+                await session.commit()
+    except Exception:
+        logger.exception("Could not mark document %s as failed", document_id)

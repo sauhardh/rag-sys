@@ -1,8 +1,13 @@
 from typing import Any
+from pydantic import BaseModel, EmailStr
+from datetime import date, time
+from openai.types.chat import ChatCompletionToolParam
+import logging
 
 from app.db import AsyncSessionLocal
 from app.db.models import InterviewBooking
-from openai.types.chat import ChatCompletionToolParam
+
+logger = logging.getLogger(__name__)
 
 
 BOOKING_TOOL_DEFINITION: ChatCompletionToolParam = {
@@ -42,18 +47,29 @@ BOOKING_TOOL_DEFINITION: ChatCompletionToolParam = {
 }
 
 
-async def save_booking(session_id: str, args: dict[str, Any]):
+class BookingInput(BaseModel):
+    name: str
+    email: EmailStr
+    date: date
+    time: time
+
+
+async def save_booking(session_id: str, args: dict[str, Any]) -> InterviewBooking:
+    booking_input = BookingInput.model_validate(args)
+
     async with AsyncSessionLocal() as session:
         booking = InterviewBooking(
             session_id=session_id,
-            name=args.get("name"),
-            email=args.get("email"),
-            interview_date=args.get("date"),
-            interview_time=args.get("time"),
+            name=booking_input.name,
+            email=booking_input.email,
+            interview_date=booking_input.date,
+            interview_time=booking_input.time,
             status="confirmed",
         )
 
         session.add(booking)
         await session.commit()
+        await session.refresh(booking)
 
+        logger.info("Booking created: %s for session %s", booking.id, session_id)
         return booking

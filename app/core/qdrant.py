@@ -5,6 +5,11 @@ from qdrant_client.models import (
 )
 from qdrant_client import QdrantClient, models
 from uuid import UUID, uuid5
+import logging
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class Collection:
@@ -12,8 +17,8 @@ class Collection:
 
     def __init__(
         self,
-        collection_name: str = "documents",
-        url: str = "http://localhost:6333",
+        collection_name: str = settings.qdrant_collection,
+        url: str = settings.qdrant_url,
     ):
         self.client = QdrantClient(url=url)
         self.collection_name = collection_name
@@ -38,7 +43,7 @@ class Collection:
         chunks: list[str],
         vectors: list[list[float]],
         filename: str,
-    ):
+    ) -> None:
         if len(chunks) != len(vectors):
             raise ValueError("The number of chunks must match the number of vectors")
 
@@ -72,7 +77,7 @@ class Collection:
         limit: int = 5,
         filter: Filter | None = None,
     ) -> List[ScoredPoint]:
-        search_result = self.client.query_points(
+        return self.client.query_points(
             collection_name=self.collection_name,
             query=vector_query,
             with_payload=with_payload,
@@ -80,11 +85,9 @@ class Collection:
             limit=limit,
         ).points
 
-        return search_result
-
     def query_formatted(
         self, vector_query: list[float], with_payload: bool = True, limit: int = 5
-    ) -> Tuple[set, str]:
+    ) -> Tuple[set[str], str]:
         scored_points = self.query(
             vector_query,
             with_payload,
