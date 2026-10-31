@@ -25,7 +25,7 @@ DATABASE_URL=postgresql+asyncpg://rag_user:rag_password@postgres:5432/rag_db
 REDIS_URL=redis://redis:6379/0
 ```
 
-> **Note for Manual/Local running**: Change the host in `DATABASE_URL` and `REDIS_URL` from `postgres` / `redis` to `localhost`.
+> **Note for Manual/Local running without docker**: Change the host in `DATABASE_URL` and `REDIS_URL` from `postgres` / `redis` to `localhost`.
 
 ---
 
@@ -169,6 +169,8 @@ Upload a PDF or TXT file to extract text, create embeddings, and store them in Q
 ### 2. Chat & RAG Assistant
 
 Engage in conversation, ask document-related questions, or book an interview.
+
+> You can put same `document_id` from `/document` response in both `session_id` and `document_id`, if starting new conversation.
 
 - **Endpoint:** `POST /api/v1/chat`
 - **Request Body (JSON):**
