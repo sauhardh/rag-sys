@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 from pydantic import BaseModel
 from typing import Tuple
+import asyncio
 
 from app.core import load_documents, chunk_documents, generate_embedding
 from app.core.qdrant import Collection
@@ -74,10 +75,13 @@ async def document(
             session.add(record)
             await session.commit()
 
-        # RAG pipeline
-        (chunk_texts_len, top_embedding) = rag_pipeline(
-            file_path, chunking_strategy, document_id, filename
-        )
+        ## RAG pipeline
+        try:
+            (chunk_texts_len, top_embedding) = await asyncio.to_thread(
+                rag_pipeline, file_path, chunking_strategy, document_id, filename
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
         # Update back onto DB
         # status = Processed
@@ -126,10 +130,7 @@ def rag_pipeline(
     ]
 
     if not chunk_texts:
-        raise HTTPException(
-            status_code=422,
-            detail="No text could be extracted from the document",
-        )
+        raise ValueError("No text could be extracted from the document")
 
     # 2. Vector Embeddings
     embeddings = generate_embedding(chunk_texts)

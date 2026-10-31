@@ -11,6 +11,6 @@ def load_documents(file_path: Path) -> list[Document]:
     elif suffix == ".txt":
         loader = TextLoader(file_path, encoding="utf-8")
     else:
-        raise ValueError(f"Unsupporte file format: {suffix}")
+        raise ValueError(f"Unsupported file format: {suffix}")
 
     return loader.load()

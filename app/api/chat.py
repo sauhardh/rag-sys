@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
-from openai.types.chat import ChatCompletionMessageParam
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionMessageToolCall
 from openai.types.chat import ChatCompletionMessageFunctionToolCall
 import json
 
@@ -90,7 +90,7 @@ async def chat(payload: ChatRequest):
         if choice.tool_calls:
             tool_call = choice.tool_calls[0]
 
-            if isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
+            if isinstance(tool_call, ChatCompletionMessageToolCall):
                 if tool_call.function.name == "book_interview":
                     args = json.loads(tool_call.function.arguments)
                     missing = [
