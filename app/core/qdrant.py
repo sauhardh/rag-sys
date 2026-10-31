@@ -2,6 +2,8 @@ from typing import List, Tuple
 from qdrant_client.models import (
     ScoredPoint,
     Filter,
+    FieldCondition,
+    MatchValue,
 )
 from qdrant_client import QdrantClient, models
 from uuid import UUID, uuid5
@@ -86,18 +88,37 @@ class Collection:
         ).points
 
     def query_formatted(
-        self, vector_query: list[float], with_payload: bool = True, limit: int = 5
+        self,
+        vector_query: list[float],
+        document_id: str | None = None,
+        with_payload: bool = True,
+        limit: int = 5,
+        min_score: float = 0.3,
     ) -> Tuple[set[str], str]:
+        query_filter: Filter | None = None
+        if document_id:
+            query_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(value=document_id),
+                    )
+                ]
+            )
+
         scored_points = self.query(
-            vector_query,
-            with_payload,
-            limit,
+            vector_query=vector_query,
+            with_payload=with_payload,
+            limit=limit,
+            filter=query_filter,
         )
 
         context_chunks = []
         sources = set()
 
         for point in scored_points:
+            if point.score is not None and point.score < min_score:
+                continue
             if point.payload:
                 text = point.payload.get("text")
                 filename = point.payload.get("filename")

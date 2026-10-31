@@ -15,9 +15,9 @@ BOOKING_TOOL_DEFINITION: ChatCompletionToolParam = {
     "function": {
         "name": "book_interview",
         "description": (
-            "Book an interview appointment when the candidate has provided "
-            "their full name, email address, interview date, and interview time. "
-            "Do not call this tool if any required information is missing."
+            "Book an interview appointment ONLY when the candidate has provided "
+            "actual values for full name, a valid email address, interview date (YYYY-MM-DD), "
+            "and interview time (HH:MM). Do not call this tool with placeholder values like '?', 'N/A', or 'unknown'."
         ),
         "parameters": {
             "type": "object",
@@ -39,10 +39,9 @@ BOOKING_TOOL_DEFINITION: ChatCompletionToolParam = {
                     "description": "Interview time in HH:MM 24-hour format",
                 },
             },
-            "required": ["name", "email", "date", "time"],
+            "required": [],
             "additionalProperties": False,
         },
-        "strict": True,
     },
 }
 
@@ -62,8 +61,8 @@ async def save_booking(session_id: str, args: dict[str, Any]) -> InterviewBookin
             session_id=session_id,
             name=booking_input.name,
             email=booking_input.email,
-            interview_date=booking_input.date,
-            interview_time=booking_input.time,
+            interview_date=booking_input.date.isoformat(),
+            interview_time=booking_input.time.strftime("%H:%M"),
             status="confirmed",
         )
 

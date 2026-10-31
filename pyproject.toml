@@ -18,5 +18,5 @@ dependencies = [
   "sqlalchemy[asyncio]>=2.1.6",
   "uvicorn>=0.54.0",
   "pydantic-settings>=2.0.0",
-
+  "email-validator>=2.0.0",
 ]
